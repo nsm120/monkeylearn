@@ -19,15 +19,17 @@ source(here("blogpost", "key.R"))
 ```
 
 
-This is a quick story all about how I started contributing to the rOpenSci package monkeylearn.
+This is a story mostly about how I started contributing to the rOpenSci package [monkeylearn](https://github.com/ropensci/monkeylearn).
 
 Things started at work, when I was looking around for an easy way to classify groups of products using R. I made the very clever first move of Googling "easy way to classify groups of products using R" and thanks to the magic of what I suppose used to be PageRank I landed upon a GitHub README for a package called monkeylearn. 
 
-A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an API key later this seemed like the package to fit my needs. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions.
+A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an API key later this seemed like the package to fit my needs. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions, respectively.
 
-For a bit of background, the `monkeylearn` package hooks into the [MonkeyLearn API](https://monkeylearn.com/api/), which uses natural language processing techniques to take a text input and either extract keywords from it or hand back a vector of classifications along with other data such as their confidence in the probability. There are a set of built-in "modules" but users can also create their own "custom" modules [^1].
+For a bit of background, the `monkeylearn` package hooks into the [MonkeyLearn API](https://monkeylearn.com/api/), which uses natural language processing techniques to take a text input and hands back a vector of outputs (keyword extractions or classifications) along with metadata such as their confidence in relevance of the classification. There are a set of built-in "modules" (e.g., retail classifier, profanity extractor) but users can also create their own "custom" modules [^1] by supplying their own labeled training data.
 
-I discovered the only stumbling block for my use case was that texts sent to the MonkeyLearn API could not be batched. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly relate inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no way to know whether the first two or the first four rows, for example, belonged to my input 1.
+I began using the package to attach classifications to around 70,000 texts. I soon discovered a major stumbling block for my particular use case: I could not send texts to the MonkeyLearn API in batches. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly *relate* inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no way to know whether the first two or the first four output rows, for example, belonged to the first input text.
+
+Here's an example of what I mean.
 
 
 ```{r do_monkeylearn_classify}
@@ -39,12 +41,12 @@ texts <- c(
 (texts_out <- monkeylearn_classify(texts))
 ```
 
-This works great if you don't care about classifying your inputs independently of one another. (Say, you're interested in classifying a whole chapter of a book.) In my case, though, my inputs were independent of one another and had to be classified independently.
+This works great if you don't care about classifying your inputs independently of one another. (Say, you're interested in classifying a whole chapter of a book.) In my case, though, my inputs were independent of one another and each had to be classified separately.
 
 
 ### Initial Workaround
 
-My initial approach to this was to simply treat each text as a seaparate call. I wrapped `monkeylearn_classify()` in a function that would send a vector of texts and return a dataframe relating the input in one column to the output in the others. It was essentially the below, with some more error handling and bells and whistles particular to the problem.
+My initial approach to this problem was to simply treat each text as a seaparate call. I wrapped `monkeylearn_classify()` in a function that would send a vector of texts and return a dataframe relating the input in one column to the output in the others. Here is a simplified version of it, sans the error handling and other bells and whistles:
 
 
 ```{r initial_workaround}
@@ -59,21 +61,21 @@ initial_workaround <- function(df, col, key) {
   
   for (i in 1:nrow(df)) {
     this_text <- df %>% select(!!quo_col) %>% slice(i) %>% as_vector()
-    this_out <- monkeylearn_classify(this_text, key = key) %>% list()
-    out[i, ]$tags <- this_out
+    this_classification <- monkeylearn_classify(this_text, key = key) %>% list()
+    out[i, ]$tags <- this_classification
   }
 
   return(out)
 }
 ```
 
-Since it takes a dataframe rather than a vector, let's turn our sample into a tibble.
+Since `initial_workaround()` takes a dataframe as input rather than a vector, let's turn our sample into a tibble before feeding it in.
 
 ```{r}
 texts_df <- tibble(texts)
 ```
 
-And run the workaround:
+And now we'll run the workaround:
 
 ```{r}
 (initial_out <- initial_workaround(texts_df, texts, key = ml_key))
@@ -87,37 +89,39 @@ initial_out %>% unnest()
 ```
 
 
-But, the catch: this appraoch was quite slow. The bottleneck wasn't the for loop; it was the round trip to the MonkeyLearn API for each individual text. For just these three meager texts, `initial_workaround()` takes a painfully long time.
+But, the catch: this appraoch was quite slow. The real bottleneck here isn't the for loop; it's that this requires a round trip to the MonkeyLearn API for each individual text. For just these three meager texts, let's see how long `initial_workaround()` takes to finish.
 
 ```{r}
 system.time(initial_workaround(texts_df, texts, key = ml_key))
 ```
 
-Even classifying relatively "small" data -- around 70,000 texts -- was going to take a looong time. I updated the function to write each row out to an RDS file after it was classified inside the loop (along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the funciton successfully finishing execution in one run. Still, I didn't like my options.
+It was clear that even classifying my relatively "small" data was going to take a looong time. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the funciton successfully finishing execution in one run. Still, I didn't like my options.
 
-This job was intended to be run every night, and with an uncertain amount of text data coming in every day, I didn't want it to run for more than 24 hours one day and either a) prevent the next night's job from running or b) necessitate spinning up a second server to handle the next night's data.
+This classification job was intended to be run every night, and with an unknown amount of input text data coming in every day, I didn't want it to run for more than 24 hours one day and either a) prevent the next night's job from running or b) necessitate spinning up a second server to handle the next night's data.
 
 
 ### Diving In
 
-Now that I'm like 
+Now that I'm starting to think 
 
-<img src = "./theresgottabeabetterway.gif">
+<img src = "./theresgottabeabetterway.gif" style="text-align: center">
 <!-- ![](here("blogpost", "theresgottabeabetterway.gif"")) -->
 
 I'm just about at the point where I have to start making myself useful.
 
-My specific question was about the mechanics of how the batching is done. I'd seen in the package docs and on the [MonkeyLearn FAQ](http://help.monkeylearn.com/frequently-asked-questions/queries/can-i-classify-or-extract-more-than-one-text-with-one-api-request) that batching up to 200 texts was possible. Batching doesn't save you on requests (sending 200 texts in a batch means you now have 200 fewer queries), but it does save you bigtime on speed.
+I'd seen in the package docs and on the [MonkeyLearn FAQ](http://help.monkeylearn.com/frequently-asked-questions/queries/can-i-classify-or-extract-more-than-one-text-with-one-api-request) that batching up to 200 texts was possible[^2]. So, I decide to first look into the mechanics of how text batching is done.
 
-Was MonkeyLearn returning JSON that severed the ties between input and output? I sort of doubted it. You'd think that an API that was sent a JSON array of inputs would send back an array to match. My huch was that either the package was concatenating the input (which *would* save user on API queries) or rbinding the output.
+Was MonkeyLearn returning JSON that severed the ties between input and output? I sort of doubted it. You'd think that an API that was sent a JSON "array" of inputs would send back an array to match. My huch was that either the package was concatenating the input before shooting it off to the API (which *would* save user on API queries) or rbinding the output.
 
-I forked the package and set about rummaging through the source code. Blissfully, everything is nicely commented and the code is quite readable. 
+I forked the package repo and set about rummaging through the source code. Blissfully, everything is nicely commented and the code was quite readable. 
 
-Inside `monkeylearn_classify()` spot a call to `monkeylearn_parse()` which I suspect is a utility function. I find it in `utils.R`.
+Inside `monkeylearn_classify()` I spot a call to `monkeylearn_parse()` which I suspect is a utility function. I find it in `utils.R`.
 
 The lines in `monkeylearn_parse()` that matter for our purposes are:
 
 ```{r, eval=FALSE}
+text <- httr::content(output, as = "text",
+                        encoding = "UTF-8")
 temp <- jsonlite::fromJSON(text)
 if(length(temp$result[[1]]) != 0){
   results <- do.call("rbind", temp$result)
@@ -125,9 +129,46 @@ if(length(temp$result[[1]]) != 0){
 ```
 
 
-So this is where the rowbinding happens!
+So this is where the rowbinding happens -- *after* the `fromJSON` call!  `r emo::ji("tada")`
 
 I set about copying `monkeylearn_parse()` and doing a bit of surgery on it to create `monkeylearn_parse_each()` which skips the rbinding and retains the list structure of each output. The rest of the function was so airtight I didn't have to change much more to get it working. 
+
+The result was:
+
+```{r monkeylearn_parse_each}
+monkeylearn_parse_each <- function(output, request_text, verbose = TRUE) {
+
+  text <- httr::content(output, as = "text",
+                  encoding = "UTF-8")
+  temp <- jsonlite::fromJSON(text)
+  results <- NULL
+
+  if(methods::is(temp$result, "list")) {
+    if(length(temp$result[[1]]) == 0){
+      results$result[[1]] <- NA_character_
+
+      if (verbose) { message("No results for this call; returning NA.") }
+
+    } else {
+      results <- temp
+    }
+  } else {   
+    results <- temp
+  }
+
+  headers <- as.data.frame(httr::headers(output))
+  headers$text_md5 <- list(vapply(X=request_text,
+                                  FUN=digest::digest,
+                                  FUN.VALUE=character(1),
+                                  USE.NAMES=FALSE,
+                                  algo = "md5"))
+
+  headers <- list(headers = headers)
+  out <- append(results, headers)
+  return(out)
+}
+```
+
 
 At this point, I'd plumbed through the guts of the package and thought that such a function might be useful to some other people out there. 
 
@@ -139,14 +180,14 @@ Along the way I also caught a couple minor bugs (things like the remnants of a f
 
 After a few more checks I wrote up a quick [pull request](https://github.com/ropensci/monkeylearn/pull/23) and checked the [package contributors](https://github.com/ropensci/monkeylearn/graphs/contributors) to see if I knew anyone. Far and away the main contributor was [Maëlle Salmon](http://www.masalmon.eu/)! I'd heard of her through the magic of #rstats Twitter and the R-Ladies Global Slack. A minute or two after submitting the PR I headed over to Slack to give her a heads up that a PR would be heading her way.
 
-In what I would come to know as her usual cheerful, perpetually-on-top-of-it form, Maëlle had already seen it and liked the idea. 
+In what I would come to know as her usual cheerful, perpetually-on-top-of-it form, Maëlle had already seen it and liked the idea for the new function. 
 
 
 ### Continuing Work
 
 To make a short story shorter, I began working on the package, chatting with Maëlle over rOpenSci Slack about tradeoffs like which package dependencies we were okay with taking on, whether to go the tidyeval or base route, what the best naming conventions for the new functions should be, etc. 
 
-On the naming front, we decided to slowly phase out `monkeylearn_classify` and `monkeylearn_extract` as the newer functions could cover all of the functionality of the older guys. I don't know much about cache invalidation, but the naming problem was hard as usual. We settled on naming their counterparts `monkey_classify` (which replaced the original `monkeylearn_classify_df`) and `monkey_extract`.
+On the naming front, we decided to gracefully deprecate `monkeylearn_classify` and `monkeylearn_extract` as the newer functions could cover all of the functionality that the older guys did. I don't know much about cache invalidation, but the naming problem was hard as usual. We settled on naming their counterparts `monkey_classify` (which replaced the original `monkeylearn_classify_df`) and `monkey_extract`. 
 
 
 **gitflow**
@@ -158,9 +199,13 @@ The idea here is to make pull requests as bite-sized as possible. You minimize m
 
 While this branch naming convention isn't particular to gitflow (to my knowledge), it did spark a short conversation on Twitter that it might be worth having around the naming conventions 
 
-<blockquote class="twitter-tweet" data-lang="en"><p lang="en" dir="ltr">I prefer named PRs as it gives a quick overview over opened PRs. While cross referencing with open issues is possible it is very tedious when you try to get an overview</p>
-&mdash; Thomas Lin Pedersen (@thomasp85) <a href="https://twitter.com/thomasp85/status/970941530709155841?ref_src=twsrc%5Etfw">March 6, 2018</a></blockquote>
-<script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+<blockquote class="twitter-tweet" data-lang="en">
+  <p lang="en" dir="ltr">
+I prefer named PRs as it gives a quick overview over opened PRs. While cross referencing with open issues is possible it is very tedious when you try to get an overview
+  </p>
+&mdash; Thomas Lin Pedersen (@thomasp85) 
+  <a href="https://twitter.com/thomasp85/status/970941530709155841?ref_src=twsrc%5Etfw">March 6, 2018</a>
+</blockquote>
 
 
 <!-- <blockquote class="twitter-tweet" data-lang="en"> -->
@@ -202,15 +247,25 @@ text_w_empties <- c(
 ```
 
 
-### Concluding words
+### Tangent on developing functions in tandem
 
 Something I've been thinking about while working on the twin functions `monkey_extract` and `monkey_classify` is what the best practice is for developing very similar functions in tandem. The functions are different enough to have different default values (`monkey_extract` has a default `extractor_id` while `monkey_classify` of course has a default `classifier_id`) but are very similar in other regards.
 
-Is it better to port all changes made to one over to the other with every update? Or is it instead better to work on one function at a time, and, at some checkpoints then batch these changes over to the other function in a big copy-paste job?
+Is it better to port all changes made to one over to the other with every update? Or is it instead better to work on one function at a time, and, at some checkpoints then batch these changes over to the other function in a big copy-paste job? I've been tending toward the latter but it's seemed a little dangerous to me.
 
-Since there are only two functions to worry about here, creating a function factory to handle them seemed like overkill.
+Since there are only two functions to worry about here, creating a function factory to handle them seemed like overkill but might technically be the best practice.
+
+
+### Last thoughts
+
+My work on the monkeylearn package so far has been rewarding to say the least. All the credit goes to Maëlle, who's provided guidance in at least three languages, English, [French](https://twitter.com/ma_salmon/status/971992354763649024), and R. I couldn't be more stoked for future collaborations -- on y va!
 
 
 
 [^1]: Custom, to a point. As of this writing, two types of classifier models you can create use either Naive Bayes or Support Vector Machines, though you can specify other parameters such as `use_stemmer` and `strip_stopwords`.
 
+[^2]: Batching doesn't save you on requests (sending 200 texts in a batch means you now have 200 fewer queries), but it does save you bigtime on speed.
+
+<div style="display:none;"> 
+  <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+<div>
