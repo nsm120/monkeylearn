@@ -128,7 +128,7 @@ Was the MonkeyLearn API returning JSON that didn't relate each input individual 
 
 So I fork the package repo and set about rummaging through the source code. Blissfully, everything is nicely commented and the code was quite readable. 
 
-I step through `monkeylearn_classify()` in the debugger and narrow in on a call to what looks like a utility function: `monkeylearn_parse()`. I find it in `utils.R`.
+I step through `monkeylearn_classify()` in the debugger and narrow in on a call to what looks like a utility function: `monkeylearn_parse()`. I find it in [`utils.R`](https://github.com/ropensci/monkeylearn/blob/master/R/utils.R).
 
 The lines in `monkeylearn_parse()` that matter for our purposes are:
 
