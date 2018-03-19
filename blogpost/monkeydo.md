@@ -15,23 +15,32 @@ output:
 
 
 
-
-
 <br>
 
-This is a story mostly about how I started contributing to the rOpenSci package [monkeylearn](https://github.com/ropensci/monkeylearn).
+
+```r
+library(monkeylearn)
+library(tidyverse)
+```
+
+
+This is a story (mostly) about how I started contributing to the rOpenSci package [monkeylearn](https://github.com/ropensci/monkeylearn). I can't promise any life flipturning upside down, but there will be a small discussion about git best practices which is almost as good 🤓.
 
 ### Some Backstory
 
-Things started at work, when I was looking around for an easy way to classify groups of products using R. I made the very clever first move of Googling "easy way to classify groups of products using R" and thanks to the magic of what I suppose used to be PageRank I landed upon a GitHub README for a package called monkeylearn. 
+Things started at work, when I was looking around for an easy way to classify groups of texts using R. I made the very clever first move of Googling "easy way to classify groups of texts using R" and thanks to the magic of what I suppose used to be PageRank I landed upon a GitHub README for a package called monkeylearn. 
 
-A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an API key later this seemed like the package to fit my needs. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions, respectively.
+A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an API key later it stared looking like this package would fit my use case. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions, respectively.
+
+<br>
 
 <img src = "./monkeylearn_api.png" style="height: 450px">
 
+<br>
+
 For a bit of background, the `monkeylearn` package hooks into the [MonkeyLearn API](https://monkeylearn.com/api/), which uses natural language processing techniques to take a text input and hands back a vector of outputs (keyword extractions or classifications) along with metadata such as their confidence in relevance of the classification. There are a set of built-in "modules" (e.g., retail classifier, profanity extractor) but users can also create their own "custom" modules [^1] by supplying their own labeled training data.
 
-I began using the package to attach classifications to around 70,000 texts. I soon discovered a major stumbling block for my particular use case: I could not send texts to the MonkeyLearn API in batches. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly *relate* inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no way to know whether the first two or the first four output rows, for example, belonged to the first input text.
+I began using the package to attach classifications to around 70,000 texts. I soon discovered a major stumbling block: I could not send texts to the MonkeyLearn API in batches. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly *relate* inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no way to know whether the first two or the first four output rows, for example, belonged to the first input text.
 
 Here's an example of what I mean.
 
@@ -63,10 +72,13 @@ texts <- c(
 
 This works great if you don't care about classifying your inputs independently of one another. (Say, you're interested in classifying a whole chapter of a book.) In my case, though, my inputs were independent of one another and each had to be classified separately.
 
+That MD5 hash almost provided the solution; each row of the output gets a hash that corresponds to a single input row, so it seemed like the hash was meant to be used to be able to map inputs to outputs. Provided that I knew that all of my inputs were non-empty strings, which are filtered out before they can be sent to the API, and could be classified I could have nested the output based on its MD5 sum and mapped the indices of the inputs and the outputs 1:1. The trouble was that I knew that my input data would be changing and I wasn't convinced that all of my inputs would be receive well-formed responses from the API. If some of the text couldn't receive a corresponding set of classification, such a nested output would have fewer rows than the input vector's length. There would be no way to tell which input corresponded to which nested output.
+
+<br>
 
 ### Initial Workaround
 
-My first approach to this problem was to simply treat each text as a seaparate call. I wrapped `monkeylearn_classify()` in a function that would send a vector of texts and return a dataframe relating the input in one column to the output in the others. Here is a simplified version of it, sans the error handling and other bells and whistles:
+My first approach to this problem was to simply treat each text as a separate call. I wrapped `monkeylearn_classify()` in a function that would send a vector of texts and return a dataframe relating the input in one column to the output in the others. Here is a simplified version of it, sans the error handling and other bells and whistles:
 
 
 
@@ -138,22 +150,25 @@ When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating
 When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313236         0.406  Decorations        
 
 
-But, the catch: this appraoch was quite slow. The real bottleneck here isn't the for loop; it's that this requires a round trip to the MonkeyLearn API for each individual text. For just these three meager texts, let's see how long `initial_workaround()` takes to finish.
+But, the catch: this approach was quite slow. The real bottleneck here isn't the for loop; it's that this requires a round trip to the MonkeyLearn API for each individual text. For just these three meager texts, let's see how long `initial_workaround()` takes to finish.
 
 
 ```r
-system.time(initial_workaround(texts_df, texts))
+(benchmark <- initial_workaround(texts_df, texts) %>% 
+  microbenchmark::microbenchmark(times = 10, unit = "s"))
 ```
 
 ```
-##    user  system elapsed 
-##   0.039   0.000   9.445
+## Unit: seconds
+##  expr   min      lq      mean   median      uq       max neval
+##     . 2e-08 2.1e-08 6.291e-07 2.15e-08 2.2e-08 6.076e-06    10
 ```
 
-It was clear that even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the funciton successfully finishing execution in one run. Still, I didn't like my options.
+It was clear that if classifying 3 inputs was going to take 21.5 seconds, even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the function successfully finishing execution in one run. Still, I didn't like my options.
 
 This classification job was intended to be run every night, and with an unknown amount of input text data coming in every day, I didn't want it to run for more than 24 hours one day and either a) prevent the next night's job from running or b) necessitate spinning up a second server to handle the next night's data.
 
+<br>
 
 ### Diving In
 
@@ -165,7 +180,7 @@ I'm just about at the point where I have to start making myself useful.
 
 I'd seen in the package docs and on the [MonkeyLearn FAQ](http://help.monkeylearn.com/frequently-asked-questions/queries/can-i-classify-or-extract-more-than-one-text-with-one-api-request) that batching up to 200 texts was possible[^2]. So, I decide to first look into the mechanics of how text batching is done in the `monkeylearn` package.
 
-Was the MonkeyLearn API returning JSON that didn't relate each input individual and output? I sort of doubted it. You'd think that an API that was sent a JSON "array" of inputs would send back a hierarchical array to match. My huch was that either the package was concatenating the input before shooting it off to the API (which *would* save user on API queries) or rowbinding the output after it was returned. (The rowbinding itself would be fine if each input could somehow be related to its one or many outputs.)
+Was the MonkeyLearn API returning JSON that didn't relate each input individual and output? I sort of doubted it. You'd think that an API that was sent a JSON "array" of inputs would send back a hierarchical array to match. My hunch was that either the package was concatenating the input before shooting it off to the API (which *would* save user on API queries) or rowbinding the output after it was returned. (The rowbinding itself would be fine if each input could somehow be related to its one or many outputs.)
 
 So I fork the package repo and set about rummaging through the source code. Blissfully, everything is nicely commented and the code was quite readable. 
 
@@ -180,6 +195,14 @@ text <- httr::content(output, as = "text",
 temp <- jsonlite::fromJSON(text)
 if(length(temp$result[[1]]) != 0){
   results <- do.call("rbind", temp$result)
+  results$text_md5 <- unlist(mapply(rep, vapply(X=request_text,
+                                                    FUN=digest::digest,
+                                                    FUN.VALUE=character(1),
+                                                    USE.NAMES=FALSE,
+                                                    algo = "md5"),
+                                        unlist(vapply(temp$result, nrow,
+                                                      FUN.VALUE = 0)),
+                                        SIMPLIFY = FALSE))
 }
 ```
 
@@ -188,27 +211,31 @@ So this is where the rowbinding happens -- *after* the `fromJSON` call!  🎉
 
 This is good news because it means that the MonkeyLearn API *is* sending differentiated outputs back in a nested JSON object. The package converts this to a list with `fromJSON` and only *then* is the rbinding applied.
 
-I set about copy-pasting `monkeylearn_parse()` and doing a bit of surgery on it. I created `monkeylearn_parse_each()`, which skips the rbinding and retains the list structure of each output. That meant that inside an enclosing function, the output of `monkeylearn_parse_each()` can be turned into a nested tibble with each row corresponding to one input. That nested tibble can then be related to each corresponding element of the input vector. All that remained was to use create a new enclosing analog to `monkeylearn_classify()` that could use `monkeylearn_parse_each()`.
+I set about copy-pasting `monkeylearn_parse()` and did a bit of surgery on it, emerging with `monkeylearn_parse_each()`. `monkeylearn_parse_each()` skips the rbinding and retains the list structure of each output, which means that its output can be turned into a nested tibble with each row corresponding to one input. That nested tibble can then be related to each corresponding element of the input vector. All that remained was to use create a new enclosing analog to `monkeylearn_classify()` that could use `monkeylearn_parse_each()`.
+
 
 #### Thinking PR thoughts
 
-At this point, I thought that such a function might be useful to some other people using the package so I started writing this new funciton with an eye toward making a pull request.
+At this point, I thought that such a function might be useful to some other people using the package so I started writing this new function with an eye toward making a pull request.
 
-Since I'd found it useful to be able to pass in an input dataframe in `initial_workaround()`, I figured I'd retain that option. I wanted users to still be able to pass in a bare column name but the package seemed to be light on tidyverse functions unless there was no alternative, so I un-tidyeval'd the function (using `deparse(substitute())` instead of a quosure) and gave it the imaginative name...`monkeylearn_classify_df()`. The rest of the original code was so airtight I didn't have to change much more to get it working. 
+Since I'd found it useful to be able to pass in an input dataframe in `initial_workaround()`, I figured I'd retain that feature of the function. I wanted users to still be able to pass in a bare column name but the package seemed to be light on tidyverse functions unless there was no alternative, so I un-tidyeval'd the function (using `deparse(substitute())` instead of a quosure) and gave it the imaginative name...`monkeylearn_classify_df()`. The rest of the original code was so airtight I didn't have to change much more to get it working. 
 
 
 A nice side effect of my plumbing through the guts of the package was that I caught a couple minor bugs (things like the remnants of a for loop remaining in what had been revamped into a while loop) and noticed where there could be some quick wins for improving the package.
 
-After a few more checks I wrote up a [pull request](https://github.com/ropensci/monkeylearn/pull/23) and checked list of [package contributors](https://github.com/ropensci/monkeylearn/graphs/contributors) to see if I knew anyone. Far and away the main contributor was [Maëlle Salmon](http://www.masalmon.eu/)! I'd heard of her through the magic of #rstats Twitter and the R-Ladies Global Slack. A minute or two after submitting it I headed over to Slack to give her a heads up that a PR would be heading her way.
+After a few more checks I wrote up the description for the [pull request](https://github.com/ropensci/monkeylearn/pull/23) which outlined the issue and the solution (though I probably should have both an issue and PR referencing it as [Mara Averick](https://twitter.com/dataandme) suggests in her fantastic guide to [contributing to the tidyverse](https://speakerdeck.com/batpigandme/contributing-to-the-tidyverse)).
+
+I checked the list of [package contributors](https://github.com/ropensci/monkeylearn/graphs/contributors) to see if I knew anyone. Far and away the main contributor was [Maëlle Salmon](http://www.masalmon.eu/)! I'd heard of her through the magic of #rstats Twitter and the R-Ladies Global Slack. A minute or two after submitting it I headed over to Slack to give her a heads up that a PR would be heading her way.
 
 In what I would come to know as her usual cheerful, perpetually-on-top-of-it form, Maëlle had already seen it and liked the idea for the new function. 
 
+<br>
 
 ### Continuing Work
 
-To make a short story shorter, Maëlle asked me if I'd like to create the extractor counterpart to `monkeylearn_classify_df` and work on improving the existing functionality in general. I said yes, of course, and we began strategizing over rOpenSci Slack about tradeoffs like which package dependencies we were okay with taking on, whether to go the tidyeval or base route, what the best naming conventions for the new functions should be, etc. 
+To make a short story shorter, Maëlle asked me if I'd like to create the extractor counterpart to `monkeylearn_classify_df()` and become an author on the package with push access to the repo. I said yes, of course, and Maëlle opened an onboarding [issue](https://github.com/ropensci/monkeylearn/issues/24) to collect a to-do list and discuss different directions to take the idea in the PR. We continued to strategize over rOpenSci Slack about tradeoffs like which package dependencies we were okay with taking on, whether to go the tidyeval or base route, what the best naming conventions for the new functions should be, etc. 
 
-On the naming front, we decided to gracefully deprecate `monkeylearn_classify` and `monkeylearn_extract` as the newer functions could cover all of the functionality that the older guys did. I don't know much about cache invalidation, but the naming problem [was hard as usual](https://github.com/ropensci/monkeylearn/issues/24). We settled on naming their counterparts `monkey_classify` (which replaced the original `monkeylearn_classify_df`) and `monkey_extract`. 
+On the naming front, we decided to gracefully deprecate `monkeylearn_classify()` and `monkeylearn_extract()` as the newer functions could cover all of the functionality that the older guys did. I don't know much about cache invalidation, but the naming problem [was hard as usual](https://github.com/ropensci/monkeylearn/issues/24). We settled on naming their counterparts `monkey_classify()` (which replaced the original `monkeylearn_classify_df()`) and `monkey_extract()`. 
 
 
 #### gitflow
@@ -250,13 +277,13 @@ I prefer named PRs as it gives a quick overview over opened PRs. While cross ref
 
 This insight has me thinking that the best approach might be to explicitly name the issue number *and* give a description in the branch or PR title.
 
-In any case, our current system of only referenging the issue number has worked out well for Maëlle and me thus far, but that certainly doesn't mean that our commit history couldn't be more readable by including more verbose descriptions in the branch name as well.
+In any case, our current system of only referencing the issue number has worked out well for Maëlle and me thus far, but that certainly doesn't mean that our commit history couldn't be more readable by including more verbose descriptions in the branch name as well.
 
 #### Main Improvements
 
 As I mentioned, the package was so good to begin with it was difficult to find ways to improve it. Most of the subsequent work I did was to improve the new `monkey_` functions.
 
-They got more informative messages about which batches are currently being processed and which texts those batches corresponsed to. Rather than discarding inputs such as empty strings that could not be sent to the API as the original `monkeylearn_` functions did, we now return return a row of NAs. This means that the output is always of the same dimensions as the input, and can be unnested with either an `unnest` flag,.
+They got more informative messages about which batches are currently being processed and which texts those batches corresponded to. Rather than discarding inputs such as empty strings that could not be sent to the API as the original `monkeylearn_` functions did, we now return a row of NAs. This means that the output is always of the same dimensions as the input, and can be unnested with either an `unnest` flag,.
 
 
 ```r
@@ -311,23 +338,141 @@ As soon as you make a change to one function, should you immediately make the sa
 
 Since there are only two functions to worry about here, creating a function factory to handle them seemed like overkill, but might technically be the best practice. I'd love to hear people's thoughts on how they go about navigating this facet of package development.
 
+<br>
 
 ### Last Thoughts
 
 My work on the monkeylearn package so far has been rewarding to say the least. It's inspired me to be less of a consumer and more of an active contributor to open source.
 
-Maëlle's been a fantastic mentor through and through, providing guidance in at least three languages -- English, [French](https://twitter.com/ma_salmon/status/971992354763649024), and R, despite the time difference and 👶(!). I couldn't be more stoked for future collaborations. *On y va*!
+#### Insert plug for other rOpenSci packages that need some love 
+
+Maëlle's been a fantastic mentor through and through, providing guidance in at least four languages -- English, [French](https://twitter.com/ma_salmon/status/971992354763649024), R, and emoji, despite the time difference and 👶(!). I couldn't be more stoked for future collaborations. *On y va*!
 
 <img src = "./onward.gif" style="margin-left: 10%">
 
-<br>
-<br>
 
 [^1]: Custom, to a point. As of this writing, two types of classifier models you can create use either Naive Bayes or Support Vector Machines, though you can specify other parameters such as `use_stemmer` and `strip_stopwords`.
 
 [^2]: Batching doesn't save you on requests (sending 200 texts in a batch means you now have 200 fewer queries), but it does save you bigtime on speed.
 
 [^3]: Keywords in commits don't automatically close issues until they're merged into master, and since we were working off of dev for quite a long time, if we relied on keywords to automatically close issues our Open issues list wouldn't accurately reflect the issues that we actually still had to address. Would be cool for GitHub to allow flags like maybe "fixes #33 --dev" could close issue #33 when the PR with that phrase in the commit was merged into dev. 
+
+<br>
+
+
+
+```r
+devtools::session_info()
+```
+
+```
+## Session info -------------------------------------------------------------
+```
+
+```
+##  setting  value                       
+##  version  R version 3.3.3 (2017-03-06)
+##  system   x86_64, darwin13.4.0        
+##  ui       X11                         
+##  language (EN)                        
+##  collate  en_US.UTF-8                 
+##  tz       America/Chicago             
+##  date     2018-03-19
+```
+
+```
+## Packages -----------------------------------------------------------------
+```
+
+```
+##  package        * version    date       source                          
+##  assertthat       0.2.0      2017-04-11 CRAN (R 3.3.3)                  
+##  backports        1.1.2      2017-12-13 cran (@1.1.2)                   
+##  base           * 3.3.3      2017-03-07 local                           
+##  bindr            0.1        2016-11-13 CRAN (R 3.3.3)                  
+##  bindrcpp         0.2        2017-06-17 CRAN (R 3.3.3)                  
+##  broom            0.4.3      2017-11-20 cran (@0.4.3)                   
+##  cellranger       1.1.0      2016-07-27 CRAN (R 3.3.3)                  
+##  codetools        0.2-15     2016-10-05 CRAN (R 3.3.3)                  
+##  colorspace       1.3-2      2016-12-14 CRAN (R 3.3.3)                  
+##  crayon           1.3.4      2018-02-13 Github (r-lib/crayon@95b3eae)   
+##  curl             3.1        2017-12-12 CRAN (R 3.3.2)                  
+##  datasets       * 3.3.3      2017-03-07 local                           
+##  devtools         1.13.4     2017-11-09 cran (@1.13.4)                  
+##  digest           0.6.13     2017-12-14 cran (@0.6.13)                  
+##  dplyr          * 0.7.4      2017-09-28 CRAN (R 3.3.2)                  
+##  emo              0.0.0.9000 2017-08-21 Github (hadley/emo@86af4e6)     
+##  evaluate         0.10.1     2017-06-24 CRAN (R 3.3.3)                  
+##  forcats          0.2.0      2017-01-23 CRAN (R 3.3.3)                  
+##  foreign          0.8-69     2017-06-21 CRAN (R 3.3.3)                  
+##  ggplot2        * 2.2.1      2016-12-30 CRAN (R 3.3.2)                  
+##  glue             1.2.0      2017-10-29 CRAN (R 3.3.2)                  
+##  graphics       * 3.3.3      2017-03-07 local                           
+##  grDevices      * 3.3.3      2017-03-07 local                           
+##  grid             3.3.3      2017-03-07 local                           
+##  gtable           0.2.0      2016-02-26 CRAN (R 3.3.3)                  
+##  haven            1.1.0      2017-07-09 CRAN (R 3.3.3)                  
+##  highr            0.6        2016-05-09 CRAN (R 3.3.3)                  
+##  hms              0.4.0      2017-11-23 CRAN (R 3.3.2)                  
+##  htmltools        0.3.6      2017-04-28 CRAN (R 3.3.3)                  
+##  httpuv           1.3.5.9000 2017-09-29 Github (rstudio/httpuv@2a23c0a) 
+##  httr             1.3.1      2017-08-20 cran (@1.3.1)                   
+##  jsonlite         1.5        2017-06-01 CRAN (R 3.3.3)                  
+##  knitr            1.18       2017-12-27 cran (@1.18)                    
+##  lattice          0.20-35    2017-03-25 CRAN (R 3.3.3)                  
+##  lazyeval         0.2.1      2017-10-29 CRAN (R 3.3.2)                  
+##  lubridate        1.7.1      2017-11-03 cran (@1.7.1)                   
+##  magrittr         1.5        2014-11-22 CRAN (R 3.3.3)                  
+##  MASS             7.3-47     2017-04-21 CRAN (R 3.3.3)                  
+##  Matrix           1.2-11     2017-08-16 CRAN (R 3.3.2)                  
+##  memoise          1.1.0      2018-02-01 Github (hadley/memoise@611cfad) 
+##  methods        * 3.3.3      2017-03-07 local                           
+##  microbenchmark   1.4-3      2018-01-08 CRAN (R 3.3.2)                  
+##  mime             0.5        2016-07-07 CRAN (R 3.3.3)                  
+##  miniUI           0.1.1      2016-01-15 CRAN (R 3.3.0)                  
+##  mnormt           1.5-5      2016-10-15 CRAN (R 3.3.0)                  
+##  modelr           0.1.1      2017-07-24 CRAN (R 3.3.3)                  
+##  monkeylearn    * 0.1.3      2018-03-12 local                           
+##  multcomp         1.4-7      2017-09-07 CRAN (R 3.3.2)                  
+##  munsell          0.4.3      2016-02-13 CRAN (R 3.3.3)                  
+##  mvtnorm          1.0-6      2017-03-02 cran (@1.0-6)                   
+##  nlme             3.1-131    2017-02-06 CRAN (R 3.3.3)                  
+##  parallel         3.3.3      2017-03-07 local                           
+##  pkgconfig        2.0.1      2017-03-21 CRAN (R 3.3.3)                  
+##  plyr             1.8.4      2016-06-08 CRAN (R 3.3.3)                  
+##  psych            1.7.8      2017-09-09 CRAN (R 3.3.3)                  
+##  purrr          * 0.2.4      2017-10-18 CRAN (R 3.3.2)                  
+##  R6               2.2.2      2017-06-17 CRAN (R 3.3.3)                  
+##  Rcpp             0.12.14    2017-11-23 cran (@0.12.14)                 
+##  readr          * 1.1.1      2017-05-16 CRAN (R 3.3.3)                  
+##  readxl           1.0.0      2017-04-18 CRAN (R 3.3.3)                  
+##  reshape2         1.4.3      2017-12-11 cran (@1.4.3)                   
+##  rlang            0.2.0.9000 2018-03-02 Github (r-lib/rlang@9ea33dd)    
+##  rmarkdown        1.8        2017-11-17 cran (@1.8)                     
+##  rprojroot        1.3-2      2018-01-03 cran (@1.3-2)                   
+##  rstudioapi       0.7        2017-09-07 CRAN (R 3.3.2)                  
+##  rvest            0.3.2      2016-06-17 CRAN (R 3.3.0)                  
+##  sandwich         2.4-0      2017-07-26 CRAN (R 3.3.3)                  
+##  scales           0.5.0.9000 2018-03-18 Github (hadley/scales@d767915)  
+##  shiny            1.0.5.9000 2017-11-20 Github (rstudio/shiny@cad20a0)  
+##  splines          3.3.3      2017-03-07 local                           
+##  stats          * 3.3.3      2017-03-07 local                           
+##  stringi          1.1.6      2017-11-17 CRAN (R 3.3.2)                  
+##  stringr          1.2.0      2017-02-18 CRAN (R 3.3.3)                  
+##  survival         2.41-3     2017-04-04 CRAN (R 3.3.3)                  
+##  TH.data          1.0-8      2017-01-23 CRAN (R 3.3.3)                  
+##  tibble         * 1.3.4      2017-08-22 cran (@1.3.4)                   
+##  tidyr          * 0.7.2      2017-10-16 cran (@0.7.2)                   
+##  tidyverse      * 1.1.1      2017-01-27 CRAN (R 3.3.3)                  
+##  tools            3.3.3      2017-03-07 local                           
+##  utils          * 3.3.3      2017-03-07 local                           
+##  withr            2.1.1.9000 2017-12-26 Github (jimhester/withr@df18523)
+##  xml2             1.1.1      2017-01-24 cran (@1.1.1)                   
+##  xtable           1.8-2      2016-02-05 CRAN (R 3.3.3)                  
+##  yaml             2.1.16     2017-12-12 cran (@2.1.16)                  
+##  zoo              1.8-1      2018-01-08 cran (@1.8-1)
+```
+
 
 <div style="display:none;"> 
   <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
