@@ -30,7 +30,7 @@ This is a story (mostly) about how I started contributing to the rOpenSci packag
 
 Things started at work, when I was looking around for an easy way to classify groups of texts using R. I made the very clever first move of Googling "easy way to classify groups of texts using R" and thanks to the magic of what I suppose used to be PageRank I landed upon a GitHub README for a package called monkeylearn. 
 
-A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an API key later it stared looking like this package would fit my use case. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions, respectively.
+A quick `install.packages("monkeylearn")` and creation of an API key later it stared looking like this package would fit my use case. I loved that it sported only two functions, `monkeylearn_classify()` and `monkeylearn_extract()`, which did exactly what they said on the tin. They accept a vector of texts and return a dataframe of classifications or keyword extractions, respectively.
 
 <br>
 
@@ -38,9 +38,11 @@ A quick `devtools::github_install("ropensci/monkeylearn")` and creation of an AP
 
 <br>
 
-For a bit of background, the `monkeylearn` package hooks into the [MonkeyLearn API](https://monkeylearn.com/api/), which uses natural language processing techniques to take a text input and hands back a vector of outputs (keyword extractions or classifications) along with metadata such as their confidence in relevance of the classification. There are a set of built-in "modules" (e.g., retail classifier, profanity extractor) but users can also create their own "custom" modules [^1] by supplying their own labeled training data.
+For a bit of background, the `monkeylearn` package hooks into the [MonkeyLearn API](https://monkeylearn.com/api/), which uses natural language processing techniques to take a text input and hands back a vector of outputs (keyword extractions or classifications) along with metadata such as their confidence in relevance of the classification. There are a set of built-in "modules" (e.g., retail classifier, profanity extractor) but users can also create their own "custom" modules[^1] by supplying their own labeled training data.
 
-I began using the package to attach classifications to around 70,000 texts. I soon discovered a major stumbling block: I could not send texts to the MonkeyLearn API in batches. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly *relate* inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no way to know whether the first two or the first four output rows, for example, belonged to the first input text.
+The monkeylearn R package serves as a friendly interface to that API, allowing users to process data using the built-in modules (it doesn't yet support creating and training of custom modules). In the rOpenSci tradition it's peer-reviewed and was contributed via the [onboarding process](https://github.com/ropensci/onboarding/issues/45). 
+
+I began using the package to attach classifications to around 70,000 texts. I soon discovered a major stumbling block: I could not send texts to the MonkeyLearn API in batches. This wasn't because the `monkeylearn_classify()` and `monkeylearn_extract()` functions themselves didn't accept multiple inputs. Instead, it was because they didn't explicitly *relate* inputs to outputs. This became a problem because inputs and outputs are not 1:1; if I send a vector of three texts for classification, my output dataframe might be 10 rows long. However, there was no user-friendly way to know for sure[^2] whether the first two or the first four output rows, for example, belonged to the first input text.
 
 Here's an example of what I mean.
 
@@ -48,31 +50,30 @@ Here's an example of what I mean.
 
 ```r
 texts <- c(
-    "In a hole in the ground there lived a hobbit.",
     "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.",
-    "When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.")
+    "When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.",
+    "I'm not an ambiturner. I can't turn left.")
 
 (texts_out <- monkeylearn_classify(texts) %>% knitr::kable())
 ```
 
 
 
- category_id   probability  label                text_md5                         
-------------  ------------  -------------------  ---------------------------------
-    18313280         0.071  Music                b48a6fe941a1bafee6af3b43a0467bbe 
-    18313502         0.054  Music DVD's          b48a6fe941a1bafee6af3b43a0467bbe 
-    18313524         0.553  See All Music DVDs   b48a6fe941a1bafee6af3b43a0467bbe 
-    18314767         0.062  Books                af55421029d7236ca6ecbb2819e18137 
-    18314954         0.047  Mystery & Suspense   af55421029d7236ca6ecbb2819e18137 
-    18314957         0.102  Police Procedural    af55421029d7236ca6ecbb2819e18137 
-    18313210         0.082  Party & Occasions    602f1ab2654b88f5c7f5c90e42d1ca7a 
-    18313231         0.176  Party Supplies       602f1ab2654b88f5c7f5c90e42d1ca7a 
-    18313235         0.134  Party Decorations    602f1ab2654b88f5c7f5c90e42d1ca7a 
-    18313236         0.406  Decorations          602f1ab2654b88f5c7f5c90e42d1ca7a 
+ category_id   probability  label                  text_md5                         
+------------  ------------  ---------------------  ---------------------------------
+    18314767         0.062  Books                  af55421029d7236ca6ecbb2819e18137 
+    18314954         0.047  Mystery & Suspense     af55421029d7236ca6ecbb2819e18137 
+    18314957         0.102  Police Procedural      af55421029d7236ca6ecbb2819e18137 
+    18313210         0.082  Party & Occasions      602f1ab2654b88f5c7f5c90e42d1ca7a 
+    18313231         0.176  Party Supplies         602f1ab2654b88f5c7f5c90e42d1ca7a 
+    18313235         0.134  Party Decorations      602f1ab2654b88f5c7f5c90e42d1ca7a 
+    18313236         0.406  Decorations            602f1ab2654b88f5c7f5c90e42d1ca7a 
+    18314767         0.063  Books                  bdb9881250321ce8abecacd4d2a8a19a 
+    18314870         0.046  Literature & Fiction   bdb9881250321ce8abecacd4d2a8a19a 
+    18314876         0.040  Mystery & Suspense     bdb9881250321ce8abecacd4d2a8a19a 
+    18314878         0.289  Suspense               bdb9881250321ce8abecacd4d2a8a19a 
 
-This works great if you don't care about classifying your inputs independently of one another. (Say, you're interested in classifying a whole chapter of a book.) In my case, though, my inputs were independent of one another and each had to be classified separately.
-
-That MD5 hash almost provided the solution; each row of the output gets a hash that corresponds to a single input row, so it seemed like the hash was meant to be used to be able to map inputs to outputs. Provided that I knew that all of my inputs were non-empty strings, which are filtered out before they can be sent to the API, and could be classified I could have nested the output based on its MD5 sum and mapped the indices of the inputs and the outputs 1:1. The trouble was that I knew that my input data would be changing and I wasn't convinced that all of my inputs would be receive well-formed responses from the API. If some of the text couldn't receive a corresponding set of classification, such a nested output would have fewer rows than the input vector's length. There would be no way to tell which input corresponded to which nested output.
+This works great if you don't care about classifying your inputs independently of one another. The MD5 hash can be used to disambiguate which outputs correspond to which inputs in some cases (see Maëlle's fantastic [Guardian Experience post](http://www.masalmon.eu/2017/10/02/guardian-experience/)!) In my case, though, my inputs were independent of one another and also could not be counted on to be well-formed. I determined that each had to be classified separately.
 
 <br>
 
@@ -122,9 +123,9 @@ initial_out %>% knitr::kable()
 
 texts                                                                                                                                                                                                tags                                                                                                                                   
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ---------------------------------------------------------------------------------------------------------------------------------------
-In a hole in the ground there lived a hobbit.                                                                                                                                                        18313280, 18313502, 18313524, 0.071, 0.054, 0.553, Music, Music DVD's, See All Music DVDs                                              
 It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                18314767, 18314954, 18314957, 0.062, 0.047, 0.102, Books, Mystery & Suspense, Police Procedural                                        
 When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.   18313210, 18313231, 18313235, 18313236, 0.082, 0.176, 0.134, 0.406, Party & Occasions, Party Supplies , Party Decorations, Decorations 
+I'm not an ambiturner. I can't turn left.                                                                                                                                                            18314767, 18314870, 18314876, 18314878, 0.063, 0.046, 0.04, 0.289, Books, Literature & Fiction, Mystery & Suspense, Suspense           
 
 
 We see that this retains the 1:1 relationship between input and output, but still allows the output list-col to be unnested. 
@@ -136,18 +137,19 @@ We see that this retains the 1:1 relationship between input and output, but stil
 
 
 
-texts                                                                                                                                                                                                 category_id   probability  label              
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ------------  ------------  -------------------
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313280         0.071  Music              
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313502         0.054  Music DVD's        
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313524         0.553  See All Music DVDs 
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314767         0.062  Books              
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314954         0.047  Mystery & Suspense 
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314957         0.102  Police Procedural  
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313210         0.082  Party & Occasions  
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313231         0.176  Party Supplies     
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313235         0.134  Party Decorations  
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313236         0.406  Decorations        
+texts                                                                                                                                                                                                 category_id   probability  label                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ------------  ------------  ---------------------
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314767         0.062  Books                
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314954         0.047  Mystery & Suspense   
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314957         0.102  Police Procedural    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313210         0.082  Party & Occasions    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313231         0.176  Party Supplies       
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313235         0.134  Party Decorations    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313236         0.406  Decorations          
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314767         0.063  Books                
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314870         0.046  Literature & Fiction 
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314876         0.040  Mystery & Suspense   
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314878         0.289  Suspense             
 
 
 But, the catch: this approach was quite slow. The real bottleneck here isn't the for loop; it's that this requires a round trip to the MonkeyLearn API for each individual text. For just these three meager texts, let's see how long `initial_workaround()` takes to finish.
@@ -160,11 +162,11 @@ But, the catch: this approach was quite slow. The real bottleneck here isn't the
 
 ```
 ## Unit: seconds
-##  expr   min      lq      mean   median      uq       max neval
-##     . 2e-08 2.1e-08 6.291e-07 2.15e-08 2.2e-08 6.076e-06    10
+##  expr   min    lq      mean  median      uq       max neval
+##     . 2e-08 2e-08 5.777e-07 2.1e-08 2.1e-08 5.555e-06    10
 ```
 
-It was clear that if classifying 3 inputs was going to take 21.5 seconds, even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the function successfully finishing execution in one run. Still, I didn't like my options.
+It was clear that if classifying 3 inputs was going to take 21 seconds, even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the function successfully finishing execution in one run. Still, I didn't like my options.
 
 This classification job was intended to be run every night, and with an unknown amount of input text data coming in every day, I didn't want it to run for more than 24 hours one day and either a) prevent the next night's job from running or b) necessitate spinning up a second server to handle the next night's data.
 
@@ -223,7 +225,7 @@ Since I'd found it useful to be able to pass in an input dataframe in `initial_w
 
 A nice side effect of my plumbing through the guts of the package was that I caught a couple minor bugs (things like the remnants of a for loop remaining in what had been revamped into a while loop) and noticed where there could be some quick wins for improving the package.
 
-After a few more checks I wrote up the description for the [pull request](https://github.com/ropensci/monkeylearn/pull/23) which outlined the issue and the solution (though I probably should have both an issue and PR referencing it as [Mara Averick](https://twitter.com/dataandme) suggests in her fantastic guide to [contributing to the tidyverse](https://speakerdeck.com/batpigandme/contributing-to-the-tidyverse)).
+After a few more checks I wrote up the description for the [pull request](https://github.com/ropensci/monkeylearn/pull/23) which outlined the issue and the solution (though I probably should have first opened an issue, waited for a response, and then submitted a PR referencing the issue as [Mara Averick](https://twitter.com/dataandme) suggests in her excellent guide to [contributing to the tidyverse](https://speakerdeck.com/batpigandme/contributing-to-the-tidyverse)).
 
 I checked the list of [package contributors](https://github.com/ropensci/monkeylearn/graphs/contributors) to see if I knew anyone. Far and away the main contributor was [Maëlle Salmon](http://www.masalmon.eu/)! I'd heard of her through the magic of #rstats Twitter and the R-Ladies Global Slack. A minute or two after submitting it I headed over to Slack to give her a heads up that a PR would be heading her way.
 
@@ -233,7 +235,7 @@ In what I would come to know as her usual cheerful, perpetually-on-top-of-it for
 
 ### Continuing Work
 
-To make a short story shorter, Maëlle asked me if I'd like to create the extractor counterpart to `monkeylearn_classify_df()` and become an author on the package with push access to the repo. I said yes, of course, and Maëlle opened an onboarding [issue](https://github.com/ropensci/monkeylearn/issues/24) to collect a to-do list and discuss different directions to take the idea in the PR. We continued to strategize over rOpenSci Slack about tradeoffs like which package dependencies we were okay with taking on, whether to go the tidyeval or base route, what the best naming conventions for the new functions should be, etc. 
+To make a short story shorter, Maëlle asked me if I'd like to create the extractor counterpart to `monkeylearn_classify_df()` and become an [aut](https://ropensci.org/blog/2018/03/16/thanking-reviewers-in-metadata/)hor on the package with push access to the repo. I said yes, of course, and Maëlle opened an initial [issue](https://github.com/ropensci/monkeylearn/issues/24) to collect a to-do list and discuss different directions to take the idea in the PR. We continued to strategize over rOpenSci Slack about tradeoffs like which package dependencies we were okay with taking on, whether to go the tidyeval or base route, what the best naming conventions for the new functions should be, etc. 
 
 On the naming front, we decided to gracefully deprecate `monkeylearn_classify()` and `monkeylearn_extract()` as the newer functions could cover all of the functionality that the older guys did. I don't know much about cache invalidation, but the naming problem [was hard as usual](https://github.com/ropensci/monkeylearn/issues/24). We settled on naming their counterparts `monkey_classify()` (which replaced the original `monkeylearn_classify_df()`) and `monkey_extract()`. 
 
@@ -288,10 +290,10 @@ They got more informative messages about which batches are currently being proce
 
 ```r
 text_w_empties <- c(
-    "In a hole in the ground there lived a hobbit.",
     "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.",
-    "",
     "When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.",
+    "",
+    "I'm not an ambiturner. I can't turn left.",
     " ")
 
 (empties_out <- monkey_classify(text_w_empties, texts_per_req = 2, unnest = TRUE) %>% knitr::kable())
@@ -312,20 +314,21 @@ text_w_empties <- c(
 
 
 
-req                                                                                                                                                                                                   category_id   probability  label              
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ------------  ------------  -------------------
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313280         0.071  Music              
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313502         0.054  Music DVD's        
-In a hole in the ground there lived a hobbit.                                                                                                                                                            18313524         0.553  See All Music DVDs 
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314767         0.062  Books              
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314954         0.047  Mystery & Suspense 
-It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314957         0.102  Police Procedural  
-                                                                                                                                                                                                               NA            NA  NA                 
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313210         0.082  Party & Occasions  
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313231         0.176  Party Supplies     
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313235         0.134  Party Decorations  
-When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313236         0.406  Decorations        
-                                                                                                                                                                                                               NA            NA  NA                 
+req                                                                                                                                                                                                   category_id   probability  label                
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ------------  ------------  ---------------------
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314767         0.062  Books                
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314954         0.047  Mystery & Suspense   
+It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.                                                                                    18314957         0.102  Police Procedural    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313210         0.082  Party & Occasions    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313231         0.176  Party Supplies       
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313235         0.134  Party Decorations    
+When Mr. Bilbo Baggins of Bag End announced that he would shortly be celebrating his eleventy-first birthday with a party of special magnificence, there was much talk and excitement in Hobbiton.       18313236         0.406  Decorations          
+                                                                                                                                                                                                               NA            NA  NA                   
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314767         0.063  Books                
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314870         0.046  Literature & Fiction 
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314876         0.040  Mystery & Suspense   
+I'm not an ambiturner. I can't turn left.                                                                                                                                                                18314878         0.289  Suspense             
+                                                                                                                                                                                                               NA            NA  NA                   
 
 So even though the empty string inputs like in row 3, aren't sent to the API, we can see they're still included in the output dataframe and assigned the same column names as all of the other outputs. That means that even if `unnest` is set to FALSE, the output can still be unnested with `tidyr::unnest()` after the fact.
 
@@ -342,9 +345,9 @@ Since there are only two functions to worry about here, creating a function fact
 
 ### Last Thoughts
 
-My work on the monkeylearn package so far has been rewarding to say the least. It's inspired me to be less of a consumer and more of an active contributor to open source.
+My work on the monkeylearn package so far has been rewarding to say the least. It's inspired me to be not just a consumer but more of an active contributor to open source. 
 
-#### Insert plug for other rOpenSci packages that need some love 
+# Insert plug for other rOpenSci packages that need some love 
 
 Maëlle's been a fantastic mentor through and through, providing guidance in at least four languages -- English, [French](https://twitter.com/ma_salmon/status/971992354763649024), R, and emoji, despite the time difference and 👶(!). I couldn't be more stoked for future collaborations. *On y va*!
 
@@ -353,9 +356,11 @@ Maëlle's been a fantastic mentor through and through, providing guidance in at 
 
 [^1]: Custom, to a point. As of this writing, two types of classifier models you can create use either Naive Bayes or Support Vector Machines, though you can specify other parameters such as `use_stemmer` and `strip_stopwords`.
 
-[^2]: Batching doesn't save you on requests (sending 200 texts in a batch means you now have 200 fewer queries), but it does save you bigtime on speed.
+[^2]: That MD5 hash almost provided the solution; each row of the output gets a hash that corresponds to a single input row, so it seemed like the hash was meant to be used to be able to map inputs to outputs. Provided that I knew that all of my inputs were non-empty strings, which are filtered out before they can be sent to the API, and could be classified I could have nested the output based on its MD5 sum and mapped the indices of the inputs and the outputs 1:1. The trouble was that I knew that my input data would be changing and I wasn't convinced that all of my inputs would be receive well-formed responses from the API. If some of the text couldn't receive a corresponding set of classification, such a nested output would have fewer rows than the input vector's length. There would be no way to tell which input corresponded to which nested output.
 
-[^3]: Keywords in commits don't automatically close issues until they're merged into master, and since we were working off of dev for quite a long time, if we relied on keywords to automatically close issues our Open issues list wouldn't accurately reflect the issues that we actually still had to address. Would be cool for GitHub to allow flags like maybe "fixes #33 --dev" could close issue #33 when the PR with that phrase in the commit was merged into dev. 
+[^3]: Batching doesn't save you on requests (sending 200 texts in a batch means you now have 200 fewer queries), but it does save you bigtime on speed.
+
+[^4]: Keywords in commits don't automatically close issues until they're merged into master, and since we were working off of dev for quite a long time, if we relied on keywords to automatically close issues our Open issues list wouldn't accurately reflect the issues that we actually still had to address. Would be cool for GitHub to allow flags like maybe "fixes #33 --dev" could close issue #33 when the PR with that phrase in the commit was merged into dev. 
 
 <br>
 
@@ -377,7 +382,7 @@ devtools::session_info()
 ##  language (EN)                        
 ##  collate  en_US.UTF-8                 
 ##  tz       America/Chicago             
-##  date     2018-03-19
+##  date     2018-03-21
 ```
 
 ```
