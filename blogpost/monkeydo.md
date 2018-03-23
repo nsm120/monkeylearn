@@ -1,9 +1,10 @@
 ---
+slug: "monkeydo"
 title: MonkeyDo
+package_version: 2.0.0
 author:
   name: Amanda Dobbyn
-  email: amanda.e.dobbyn@gmail.com
-  theme: yeti
+  url: dobb.ae
 output:
   html_document:
     keep_md: true
@@ -11,7 +12,16 @@ output:
     theme: yeti
   github_document:
     toc: false
+categories: blog
+tags:
+- r
+- package
+- text
+- nlp
+- open-source
+- api
 ---
+
 
 
 
@@ -162,11 +172,11 @@ But, the catch: this approach was quite slow. The real bottleneck here isn't the
 
 ```
 ## Unit: seconds
-##  expr   min    lq      mean  median      uq       max neval
-##     . 2e-08 2e-08 5.777e-07 2.1e-08 2.1e-08 5.555e-06    10
+##  expr     min      lq     mean  median      uq       max neval
+##     . 1.7e-08 1.9e-08 5.44e-07 1.9e-08 1.9e-08 5.238e-06    10
 ```
 
-It was clear that if classifying 3 inputs was going to take 21 seconds, even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the function successfully finishing execution in one run. Still, I didn't like my options.
+It was clear that if classifying 3 inputs was going to take 19 seconds, even classifying my relatively small data was going to take a looong time 🙈. I updated the function to write each row out to an RDS file after it was classified inside the loop (with an addition along the lines of `write_rds(out[i, ], glue::glue("some_directory/{i}.rds"))`) so that I wouldn't have to rely on the function successfully finishing execution in one run. Still, I didn't like my options.
 
 This classification job was intended to be run every night, and with an unknown amount of input text data coming in every day, I didn't want it to run for more than 24 hours one day and either a) prevent the next night's job from running or b) necessitate spinning up a second server to handle the next night's data.
 
@@ -335,7 +345,7 @@ So even though the empty string inputs like in row 3, aren't sent to the API, we
 
 #### Tangent on developing functions in tandem
 
-Something I've been thinking about while working on the twin functions `monkey_extract()` and `monkey_classify()` is what the best practice is for developing very similar functions in sync with one another. These two functions are different enough to have different default values (`monkey_extract()` has a default `extractor_id` while `monkey_classify()` has a default `classifier_id`) but are very similar in other regards.
+Something I've been thinking about while working on the twin functions `monkey_extract()` and `monkey_classify()` is what the best practice is for developing very similar functions in sync with one another. These two functions are different enough to have different default values (`monkey_extract()` has a default `extractor_id` while `monkey_classify()` has a default `classifier_id`) but are so similar in other regards as to be sort of embarrassingly parallel.
 
 As soon as you make a change to one function, should you immediately make the same change to the other? Or is it instead better to work on one function at a time, and, at some checkpoints then batch these changes over to the other function in a big copy-paste job? I've been tending toward the latter but it's seemed a little dangerous to me.
 
@@ -382,7 +392,7 @@ devtools::session_info()
 ##  language (EN)                        
 ##  collate  en_US.UTF-8                 
 ##  tz       America/Chicago             
-##  date     2018-03-21
+##  date     2018-03-22
 ```
 
 ```

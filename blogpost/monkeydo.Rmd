@@ -1,9 +1,10 @@
 ---
+slug: "monkeydo"
 title: MonkeyDo
+package_version: 2.0.0
 author:
   name: Amanda Dobbyn
-  email: amanda.e.dobbyn@gmail.com
-  theme: yeti
+  url: dobb.ae
 output:
   html_document:
     keep_md: true
@@ -11,7 +12,16 @@ output:
     theme: yeti
   github_document:
     toc: false
+categories: blog
+tags:
+- r
+- package
+- text
+- nlp
+- open-source
+- api
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -252,7 +262,7 @@ So even though the empty string inputs like in row 3, aren't sent to the API, we
 
 #### Tangent on developing functions in tandem
 
-Something I've been thinking about while working on the twin functions `monkey_extract()` and `monkey_classify()` is what the best practice is for developing very similar functions in sync with one another. These two functions are different enough to have different default values (`monkey_extract()` has a default `extractor_id` while `monkey_classify()` has a default `classifier_id`) but are very similar in other regards.
+Something I've been thinking about while working on the twin functions `monkey_extract()` and `monkey_classify()` is what the best practice is for developing very similar functions in sync with one another. These two functions are different enough to have different default values (`monkey_extract()` has a default `extractor_id` while `monkey_classify()` has a default `classifier_id`) but are so similar in other regards as to be sort of embarrassingly parallel.
 
 As soon as you make a change to one function, should you immediately make the same change to the other? Or is it instead better to work on one function at a time, and, at some checkpoints then batch these changes over to the other function in a big copy-paste job? I've been tending toward the latter but it's seemed a little dangerous to me.
 
